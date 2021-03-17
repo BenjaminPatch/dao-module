@@ -51,6 +51,7 @@ contract DaoModule {
     mapping(bytes32 => bytes32) public questionIds;
     // Mapping of questionHash to transactionHash to execution state
     mapping(bytes32 => mapping(bytes32 => bool)) public executedProposalTransactions;
+    mapping(bytes32 => bool) public oneTransactionEnforced;
 
     /// @param _executor Address of the executor (e.g. a Safe)
     /// @param _oracle Address of the oracle (e.g. Realitio)
@@ -156,7 +157,7 @@ contract DaoModule {
     /// @param proposalId Id that should identify the proposal uniquely
     /// @param txHashes EIP-712 hashes of the transactions that should be executed
     /// @param nonce Nonce that should be used when asking the question on the oracle
-    function addProposalWithNonce(string memory proposalId, bytes32[] memory txHashes, uint256 nonce) public {
+    function addProposalWithNonce(string memory proposalId, bytes32[] memory txHashes, uint256 nonce, bool enforceOneTransaction) public {
         // We load some storage variables into memory to save gas
         uint256 templateId = template;
         uint32 timeout = questionTimeout;
@@ -178,6 +179,7 @@ contract DaoModule {
         );
         // Set the question hash for this quesion id
         questionIds[questionHash] = expectedQuestionId;
+        oneTransactionEnforced[questionHash] = enforceOneTransaction;
         // Ask the question with a starting time of 0, so that it can be immediately answered
         bytes32 questionId = oracle.askQuestion(templateId, question, arbitrator, timeout, 0, nonce);
         require(expectedQuestionId == questionId, "Unexpected question id");
@@ -232,8 +234,15 @@ contract DaoModule {
     /// @param operation Operation (Call or Delegatecall) of the transaction that should be executed
     /// @notice The txIndex used by this function is always 0
     function executeProposal(string memory proposalId, bytes32[] memory txHashes, address to, uint256 value, bytes memory data, Enum.Operation operation) public {
+        string memory question = buildQuestion(proposalId, txHashes);
+        bytes32 questionHash = keccak256(bytes(question));
+        if (txHashes.length() > 1) {
+            require (!oneTransactionEnforced[questionHash], "Must call executeWholeProposal")
+        }
         executeProposalWithIndex(proposalId, txHashes, to, value, data, operation, 0);
     }
+
+    function executeWholeProposal(string memory proposalId, bytes32[] memory txHashes, address to, uint256 value, bytes memory data, Enum.Operation operation) public {
 
     /// @dev Executes the transactions of a proposal via the executor if accepted
     /// @param proposalId Id that should identify the proposal uniquely
