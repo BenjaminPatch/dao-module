@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: LGPL-3.0-only
 pragma solidity >=0.8.0;
+pragma experimental ABIEncoderV2;
 
 import "./interfaces/Realitio.sol";
 
@@ -149,8 +150,8 @@ contract DaoModule {
     /// @param proposalId Id that should identify the proposal uniquely
     /// @param txHashes EIP-712 hashes of the transactions that should be executed
     /// @notice The nonce used for the question by this function is always 0
-    function addProposal(string memory proposalId, bytes32[] memory txHashes) public {
-        addProposalWithNonce(proposalId, txHashes, 0);
+    function addProposal(string memory proposalId, bytes32[] memory txHashes, bool enforceOneTransaction) public {
+        addProposalWithNonce(proposalId, txHashes, 0, enforceOneTransaction);
     }
 
     /// @dev Function to add a proposal that should be considered for execution
@@ -236,13 +237,27 @@ contract DaoModule {
     function executeProposal(string memory proposalId, bytes32[] memory txHashes, address to, uint256 value, bytes memory data, Enum.Operation operation) public {
         string memory question = buildQuestion(proposalId, txHashes);
         bytes32 questionHash = keccak256(bytes(question));
-        if (txHashes.length() > 1) {
-            require (!oneTransactionEnforced[questionHash], "Must call executeWholeProposal")
+        if (txHashes.length > 1) {
+            require (!oneTransactionEnforced[questionHash], "Must call executeProposalWhole");
         }
         executeProposalWithIndex(proposalId, txHashes, to, value, data, operation, 0);
     }
 
-    function executeWholeProposal(string memory proposalId, bytes32[] memory txHashes, address to, uint256 value, bytes memory data, Enum.Operation operation) public {
+    function executeProposalWhole(
+        string memory proposalId,
+        bytes32[] memory txHashes,
+        address[] memory toArray,
+        uint256[] memory valueArray,
+        bytes[] memory dataArray,
+        Enum.Operation operation
+    ) public {
+        require(txHashes.length == toArray.length, "txHashes.length != toArray.length");
+        require(txHashes.length == valueArray.length, "txHashes.length != valueArray.length");
+        require(txHashes.length == dataArray.length, "txHashes.length != dataArray.length");
+        for (uint256 i = 0; i < txHashes.length; i++) {
+            executeProposalWithIndex(proposalId, txHashes, toArray[i], valueArray[i], dataArray[i], operation, i);
+        }
+    }
 
     /// @dev Executes the transactions of a proposal via the executor if accepted
     /// @param proposalId Id that should identify the proposal uniquely
